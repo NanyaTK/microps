@@ -82,6 +82,7 @@ int net_device_output(struct net_device *dev, uint16_t type,
         errorf("device transmit failure, dev=%s, len=%zu", dev->name, len);
         return -1;
     }
+    debugf("net_device_output() called");
     return 0;
 }
 

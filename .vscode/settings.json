@@ -58,6 +58,7 @@
   "files.associations": {
     "stdint.h": "c",
     "pthread.h": "c",
-    "signal.h": "c"
+    "signal.h": "c",
+    "loopback.h": "c"
   }
 }
