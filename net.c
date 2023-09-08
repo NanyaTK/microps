@@ -5,9 +5,9 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "ip.h"
 #include "platform.h"
 #include "util.h"
-#include "ip.h"
 
 struct net_protocol {
     struct net_protocol *next;
@@ -133,26 +133,47 @@ int net_input_handler(uint16_t type, const uint8_t *data, size_t len,
     struct net_protocol_queue_entry *entry;
 
     for (proto = protocols; proto; proto = proto->next) {
-        if(proto->type==type){
-            entry=memory_alloc(sizeof(*entry)+ len);
-            if(!entry){
+        if (proto->type == type) {
+            entry = memory_alloc(sizeof(*entry) + len);
+            if (!entry) {
                 errorf("memory_alloc() failure");
                 return -1;
             }
             entry->dev = dev;
             entry->len = len;
             memcpy(entry->data, data, len);
-            if(!queue_push(&proto->queue,entry)){
+            if (!queue_push(&proto->queue, entry)) {
                 errorf("queue_push() failure");
                 return -1;
             }
             debugf("queue pushed (num:%u), dev=%s, type=0x%04x, len=%zu",
                    proto->queue.num, dev->name, type, len);
             debugdump(data, len);
+            intr_raise_irq(INTR_IRQ_SOFTIRQ);
             return 0;
         }
     }
     /* unsupported protocol */
+    return 0;
+}
+
+int net_softirq_handler(void) {
+    struct net_protocol *proto;
+    struct net_protocol_queue_entry *entry;
+
+    for (proto = protocols; proto; proto = proto->next) {
+        while(1){
+            entry = queue_pop(&proto->queue);
+            if(!entry){
+                break;
+            }
+            debugf("queue popped (num:%u), dev=%s, type=0x%04x, len=%zu",
+                   proto->queue.num, entry->dev->name, proto->type, entry->len);
+            debugdump(entry->data, entry->len);
+            proto->handler(entry->data, entry->len, entry->dev);
+            memory_free(entry);
+        }
+    }
     return 0;
 }
 
@@ -187,7 +208,7 @@ int net_init(void) {
         errorf("intr_init() failure");
         return -1;
     }
-    if(ip_init()==-1){
+    if (ip_init() == -1) {
         errorf("ip_init() failure");
         return -1;
     }
