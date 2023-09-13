@@ -6,25 +6,33 @@
 #include <stdlib.h>
 
 #include "net.h"
+#include "platform.h"
 #include "util.h"
 
+/* structure about IP header */
 struct ip_hdr {
-    uint8_t vhl; /* version and header length */
-    uint8_t tos;
-    uint16_t total;
-    uint16_t id;
-    uint16_t offset; /* flag nad flagment offset */
-    uint8_t ttl;
-    uint8_t protocol;
-    uint16_t sum;
-    ip_addr_t src;
-    ip_addr_t dst;
+    uint8_t vhl;      /* version and header length */
+    uint8_t tos;      /* Type Of Service */
+    uint16_t total;   /* Total Length (about datagram) */
+    uint16_t id;      /* identification */
+    uint16_t offset;  /* flag nad flagment offset */
+    uint8_t ttl;      /* Time To Live */
+    uint8_t protocol; /* Protocol number (ex.IP=4) */
+    uint16_t sum;     /* Header Checksum */
+    ip_addr_t src;    /* Source IP address */
+    ip_addr_t dst;    /* Destination IP address*/
     uint8_t options[];
 };
 
 const ip_addr_t IP_ADDR_ANY = 0x00000000;       /* 0.0.0.0 */
 const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff; /* 255.255.255.255 */
 
+/* NOTE: if you want to add/delete the entries after net_run(), you need to
+ * protext these lists with a mutex. */
+static struct ip_iface *ifaces;
+
+/* Change IP address from strings to binary(ip_addr_t) which is Network Byte
+ * Order. */
 int ip_addr_pton(const char *p, ip_addr_t *n) {
     char *sp, *ep;
     int idx;
@@ -48,6 +56,8 @@ int ip_addr_pton(const char *p, ip_addr_t *n) {
     return 0;
 }
 
+/* Change IP address from binary(ip_addr_t) which is Network Byte Order to
+ * strings. */
 char *ip_addr_ntop(ip_addr_t n, char *p, size_t size) {
     uint8_t *u8;
 
@@ -56,6 +66,7 @@ char *ip_addr_ntop(ip_addr_t n, char *p, size_t size) {
     return p;
 }
 
+/* debug ouput for the information about IP header */
 static void ip_dump(const uint8_t *data, size_t len) {
     struct ip_hdr *hdr;
     uint8_t v, hl, hlen;
@@ -89,10 +100,67 @@ static void ip_dump(const uint8_t *data, size_t len) {
     funlockfile(stderr);
 };
 
+/* IP interface settings */
+struct ip_iface *ip_iface_alloc(const char *unicast, const char *netmask) {
+    struct ip_iface *iface;
+
+    iface = memory_alloc(sizeof(*iface));
+    if (!iface) {
+        errorf("memory_alloc() failure");
+        return NULL;
+    }
+    NET_IFACE(iface)->family = NET_IFACE_FAMILY_IP;
+    if (ip_addr_pton(unicast, &iface->unicast) == -1) {
+        errorf("ip_addr_pton() failure, addr=%s", unicast);
+        memory_free(iface);
+        return NULL;
+    }
+    if (ip_addr_pton(netmask, &iface->netmask) == -1) {
+        errorf("ip_addr_pton() failure, addr=%s", netmask);
+        memory_free(iface);
+        return NULL;
+    }
+    iface->broadcast = (iface->unicast & iface->netmask) | ~iface->netmask;
+    return iface;
+}
+
+/* registration of IP interface */
+int ip_iface_register(struct net_device *dev, struct ip_iface *iface) {
+    char addr1[IP_ADDR_STR_LEN];
+    char addr2[IP_ADDR_STR_LEN];
+    char addr3[IP_ADDR_STR_LEN];
+
+    if (net_device_add_iface(dev, NET_IFACE(iface)) == -1) {
+        errorf("net_device_add_iface() failure");
+        return -1;
+    }
+    iface->next = ifaces;
+    ifaces = iface;
+    infof("registered: dev=%s, unicast=%s, netmask=%s, broadcacst=%s",
+          dev->name, ip_addr_ntop(iface->unicast, addr1, sizeof(addr1)),
+          ip_addr_ntop(iface->netmask, addr2, sizeof(addr2)),
+          ip_addr_ntop(iface->broadcast, addr3, sizeof(addr3)));
+    return 0;
+}
+
+/* Serch for IP interface */
+struct ip_iface *ip_iface_select(ip_addr_t addr) {
+    struct ip_iface *entry;
+    for (entry = ifaces; entry; entry = entry->next) {
+        if (entry->unicast == addr) {
+            break;
+        }
+    }
+    return entry;
+}
+
+/* Valivate header */
 static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
     struct ip_hdr *hdr;
     uint8_t v;
     uint16_t hlen, total, offset;
+    struct ip_iface *iface;
+    char addr[IP_ADDR_STR_LEN];
 
     if (len < IP_HDR_SIZE_MIN) {
         errorf("too short");
@@ -124,7 +192,19 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
         errorf("fragments does not support");
         return;
     }
-    debugf("dev=%s, protocol=%u, total=%u", dev->name, hdr->protocol,
+    /* Filtering IP datagram*/
+    iface = (struct ip_iface *)net_device_get_iface(dev, NET_IFACE_FAMILY_IP);
+    if (!iface) {
+        errorf("iface(interface) is not resister to the device");
+        return;
+    }
+    if (hdr->dst != iface->unicast) {
+        if (hdr->dst != iface->broadcast && hdr->dst != IP_ADDR_BROADCAST) {
+            return;
+        }
+    }
+    debugf("dev=%s, iface=%s, protocol=%u, total=%u", dev->name,
+           ip_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->protocol,
            hdr->total);
     ip_dump(data, total);
 }

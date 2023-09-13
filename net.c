@@ -82,6 +82,35 @@ static int net_device_close(struct net_device *dev) {
     return 0;
 }
 
+/* NOTE: must not be call after net_run() */
+int net_device_add_iface(struct net_device *dev, struct net_iface *iface) {
+    struct net_iface *entry;
+
+    for (entry = dev->ifaces; entry; entry = entry->next) {
+        if (entry->family == iface->family) {
+            /* NOTE: For simplicity, only one iface can ve added per family. */
+            errorf("already exists, dev=%s, family=%d", dev->name,
+                   entry->family);
+            return -1;
+        }
+    }
+    iface->dev = dev;
+    dev->ifaces = iface;
+    return 0;
+}
+
+/* Return interface which linked with conformed device */
+struct net_iface *net_device_get_iface(struct net_device *dev, int family) {
+    struct net_iface *entry;
+
+    for (entry = dev->ifaces; entry; entry = entry->next) {
+        if(entry->family==family){
+            break;
+        }
+    }
+    return entry;
+}
+
 int net_device_output(struct net_device *dev, uint16_t type,
                       const uint8_t *data, size_t len, const void *dst) {
     if (!NET_DEVICE_IS_UP(dev)) {
@@ -162,9 +191,9 @@ int net_softirq_handler(void) {
     struct net_protocol_queue_entry *entry;
 
     for (proto = protocols; proto; proto = proto->next) {
-        while(1){
+        while (1) {
             entry = queue_pop(&proto->queue);
-            if(!entry){
+            if (!entry) {
                 break;
             }
             debugf("queue popped (num:%u), dev=%s, type=0x%04x, len=%zu",
