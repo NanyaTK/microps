@@ -59,6 +59,13 @@
     "stdint.h": "c",
     "pthread.h": "c",
     "signal.h": "c",
-    "loopback.h": "c"
-  }
+    "loopback.h": "c",
+    "array": "c",
+    "string": "c",
+    "buffer": "c",
+    "internet": "c",
+    "socket": "c",
+    "string_view": "c"
+  },
+  "C_Cpp.errorSquiggles": "disabled"
 }
