@@ -26,12 +26,20 @@ struct ip_hdr {
     uint8_t options[];
 };
 
+struct ip_protocol {
+    struct ip_protocol *next;
+    uint8_t type; /* type of protocols (ex. TCP, UDP) */
+    void (*handler)(const uint8_t *data, size_t len, ip_addr_t src,
+                    ip_addr_t dst, struct ip_iface *iface);
+};
+
 const ip_addr_t IP_ADDR_ANY = 0x00000000;       /* 0.0.0.0 */
 const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff; /* 255.255.255.255 */
 
 /* NOTE: if you want to add/delete the entries after net_run(), you need to
  * protext these lists with a mutex. */
 static struct ip_iface *ifaces;
+static struct ip_protocol *protocols;
 
 /* Change IP address from strings to binary(ip_addr_t) which is Network Byte
  * Order. */
@@ -156,6 +164,31 @@ struct ip_iface *ip_iface_select(ip_addr_t addr) {
     return entry;
 }
 
+/* NOTE: must not be call after net_run() */
+int ip_protocol_register(uint8_t type,
+                         void (*handler)(const uint8_t *data, size_t len,
+                                         ip_addr_t src, ip_addr_t dst,
+                                         struct ip_iface *iface)) {
+    struct ip_protocol *entry;
+    for (entry = protocols; entry; entry = entry->next) {
+        if (entry->type == type) {
+            errorf("already exsists, exist=%u, type=%u", entry->type, type);
+            return -1;
+        }
+    }
+    entry = memory_alloc(sizeof(*entry));
+    if (!entry) {
+        errorf("memory_alloc() failure");
+        return -1;
+    }
+    entry->type = type;
+    entry->handler = handler;
+    entry->next = protocols;
+    protocols = entry;
+    infof("registered, type=%u", entry->type);
+    return 0;
+}
+
 /* Valivate header */
 static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
     struct ip_hdr *hdr;
@@ -163,6 +196,7 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
     uint16_t hlen, total, offset;
     struct ip_iface *iface;
     char addr[IP_ADDR_STR_LEN];
+    struct ip_protocol *proto;
 
     if (len < IP_HDR_SIZE_MIN) {
         errorf("too short");
@@ -209,6 +243,14 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
            ip_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->protocol,
            hdr->total);
     ip_dump(data, total);
+    for (proto = protocols; proto; proto = proto->next) {
+        if (proto->type == hdr->protocol) {
+            proto->handler((uint8_t *)hdr + hlen, total - hlen, hdr->src,
+                           hdr->dst, iface);
+            return;
+        }
+    }
+    /* unsupported protocol */
 }
 
 static int ip_output_device(struct ip_iface *iface, const uint8_t *data,
