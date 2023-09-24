@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <sys/time.h>
 
 #ifndef IFNAMSIZ
 #define IFNAMSIZ 16
@@ -28,15 +29,17 @@
 #define NET_PROTOCOL_TYPE_ARP 0x0806
 #define NET_PROTOCOL_TYPE_IPV6 0x86dd
 
-#define NET_IFACE_FAMILY_IP     1
-#define NET_IFACE_FAMILY_IPV6   2
+#define NET_IFACE_FAMILY_IP 1
+#define NET_IFACE_FAMILY_IPV6 2
 
 #define NET_IFACE(x) ((struct net_iface *)(x))
 
 /* network device */
 struct net_device {
     struct net_device *next;
-    struct net_iface *ifaces; /* NOTE: if you want to add/delete the entries after net_run(), you need to protect ifaces with a mutex. */
+    struct net_iface
+        *ifaces; /* NOTE: if you want to add/delete the entries after net_run(),
+                    you need to protect ifaces with a mutex. */
     unsigned int index;
     char name[IFNAMSIZ];
     uint16_t type;
@@ -61,15 +64,14 @@ struct net_device_ops {
 };
 
 /* structure interface */
-struct net_iface{
+struct net_iface {
     struct net_iface *next;
     struct net_device *dev; /* back pointer to parent */
-    int family; /* about kind of interface */
+    int family;             /* about kind of interface */
     /* depends on implementation of protocols. */
 };
 
-extern struct net_device *
-net_device_alloc(void);
+extern struct net_device *net_device_alloc(void);
 extern int net_device_register(struct net_device *dev);
 extern int net_device_add_iface(struct net_device *dev,
                                 struct net_iface *iface);
@@ -82,6 +84,9 @@ extern int net_protocol_register(uint16_t type,
                                  void (*handler)(const uint8_t *data,
                                                  size_t len,
                                                  struct net_device *dev));
+
+extern int net_timer_register(struct timeval interval, void (*handler)(void));
+extern int net_timer_handler(void);
 
 extern int net_input_handler(uint16_t type, const uint8_t *data, size_t len,
                              struct net_device *dev);
