@@ -21,9 +21,9 @@
 #define IP_ENDPOINT_STR_LEN (IP_ADDR_STR_LEN + 6) /* xxx.xxx.xxx.xxx:yyyy\n */
 
 /* see https://www.iana.org/assignments/protocol-numbers/protocol-numbers.txt */
-#define IP_PROTOCOL_ICMP 1
-#define IP_PRPTOCOL_IP 6
-#define IP_PROTOCOL_UDP 17
+#define IP_PROTOCOL_ICMP 0x01
+#define IP_PRPTOCOL_TCP 0x06
+#define IP_PROTOCOL_UDP 0x11
 
 typedef uint32_t ip_addr_t;
 
