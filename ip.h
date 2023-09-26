@@ -22,7 +22,7 @@
 
 /* see https://www.iana.org/assignments/protocol-numbers/protocol-numbers.txt */
 #define IP_PROTOCOL_ICMP 0x01
-#define IP_PRPTOCOL_TCP 0x06
+#define IP_PROTOCOL_TCP 0x06
 #define IP_PROTOCOL_UDP 0x11
 
 typedef uint32_t ip_addr_t;
