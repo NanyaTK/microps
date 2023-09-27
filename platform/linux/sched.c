@@ -37,6 +37,7 @@ int sched_sleep(struct sched_ctx *ctx, mutex_t *mutex,
         errno = EINTR;
         return -1;
     }
+    return ret;
 }
 
 int sched_wakeup(struct sched_ctx *ctx) {
